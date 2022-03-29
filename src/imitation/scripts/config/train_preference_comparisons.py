@@ -78,6 +78,36 @@ def seals_mountain_car():
 
 
 @train_preference_comparisons_ex.named_config
+def reacher():
+    common = dict(env_name="Reacher-v2")
+
+
+@train_preference_comparisons_ex.named_config
+def seals_ant():
+    common = dict(env_name="seals/Ant-v0")
+
+
+@train_preference_comparisons_ex.named_config
+def seals_swimmer():
+    common = dict(env_name="seals/Swimmer-v0")
+
+
+@train_preference_comparisons_ex.named_config
+def seals_walker():
+    common = dict(env_name="seals/Walker2d-v0")
+
+
+@train_preference_comparisons_ex.named_config
+def seals_hopper():
+    common = dict(env_name="seals/Hopper-v0")
+
+
+@train_preference_comparisons_ex.named_config
+def seals_humanoid():
+    common = dict(env_name="seals/Humanoid-v0")
+
+
+@train_preference_comparisons_ex.named_config
 def fast():
     # Minimize the amount of computation. Useful for test cases.
     total_timesteps = 2
