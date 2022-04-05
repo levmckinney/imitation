@@ -18,7 +18,7 @@ train_preference_comparisons_ex = sacred.Experiment(
 
 @train_preference_comparisons_ex.config
 def train_defaults():
-    fragment_length = 100  # timesteps per fragment used for comparisons
+    fragment_length = 50  # timesteps per fragment used for comparisons
     total_timesteps = int(1e6)  # total number of environment timesteps
     total_comparisons = 5000  # total number of comparisons to elicit
     # comparisons to gather before switching back to agent training
@@ -26,7 +26,7 @@ def train_defaults():
     # factor by which to oversample transitions before creating fragments
     transition_oversampling = 1
     # fraction of total_comparisons that will be sampled right at the beginning
-    initial_comparison_frac = 0.1
+    initial_comparison_frac = 0.25
     # fraction of sampled trajectories that will include some random actions
     exploration_frac = 0.0
 
