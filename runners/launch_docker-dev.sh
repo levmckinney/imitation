@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -e # Exit immediately if a command exits with a non-zero status.
+set -x # echo on
 
 __usage="launch_docker-dev.sh - Launching humancompatibleai/imitation:python-req
 
@@ -52,7 +53,7 @@ if [[ $PULL == 1 ]]; then
   docker pull ${DOCKER_IMAGE}
 fi
 
-docker run -it --rm --init \
+docker run -it --rm --init --name imit \
   -v "${LOCAL_MNT}:/imitation" \
   -v "${MJKEY_MNT}:/root/.mujoco/mjkey.txt" \
   ${DOCKER_IMAGE} \
