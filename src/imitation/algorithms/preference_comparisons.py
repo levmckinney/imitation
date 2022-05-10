@@ -142,15 +142,8 @@ class AgentTrainer(TrajectoryGenerator):
         # will set self.logger, which also sets the logger for the algorithm
         super().__init__(custom_logger)
         if isinstance(reward_fn, reward_nets.RewardNet):
-            if isinstance(reward_fn, reward_nets.NormalizedRewardNet):
-                eval_reward_fn = reward_fn.predict_processed_eval
-                reward_fn = reward_fn.predict_processed
-            else:
-                eval_reward_fn = reward_fn = reward_fn.predict_processed
-        else:
-            eval_reward_fn = reward_fn
+            reward_fn = reward_fn.predict_processed
         self.reward_fn = reward_fn
-        self.eval_reward_fn = eval_reward_fn
         self.exploration_frac = exploration_frac
 
         venv = self.algorithm.get_env()
@@ -164,7 +157,6 @@ class AgentTrainer(TrajectoryGenerator):
         self.venv = reward_wrapper.RewardVecEnvWrapper(
             self.buffering_wrapper,
             reward_fn=self.reward_fn,
-            eval_reward_fn=self.eval_reward_fn,
         )
         self.log_callback = self.venv.make_log_callback()
 
@@ -203,13 +195,12 @@ class AgentTrainer(TrajectoryGenerator):
                 f"There are {n_transitions} transitions left in the buffer. "
                 "Call AgentTrainer.sample() first to clear them.",
             )
-        with reward_wrapper.training(self.algorithm.env):
-            self.algorithm.learn(
-                total_timesteps=steps,
-                reset_num_timesteps=False,
-                callback=self.log_callback,
-                **kwargs,
-            )
+        self.algorithm.learn(
+            total_timesteps=steps,
+            reset_num_timesteps=False,
+            callback=self.log_callback,
+            **kwargs,
+        )
 
     def sample(self, steps: int) -> Sequence[types.TrajectoryWithRew]:
         agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
@@ -245,7 +236,7 @@ class AgentTrainer(TrajectoryGenerator):
             # Instead, we collect the trajectories using the BufferingWrapper.
             rollout.generate_trajectories(
                 self.algorithm,
-                self.venv,
+                self.buffering_wrapper,
                 sample_until=sample_until,
                 # By setting deterministic_policy to False, we ensure that the rollouts
                 # are collected from a deterministic policy only if self.algorithm is
@@ -267,7 +258,7 @@ class AgentTrainer(TrajectoryGenerator):
             )
             rollout.generate_trajectories(
                 policy=self.exploration_wrapper,
-                venv=self.venv,
+                venv=self.buffering_wrapper,
                 sample_until=sample_until,
                 # buffering_wrapper collects rollouts from a non-deterministic policy
                 # so we do that here as well for consistency.

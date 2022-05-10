@@ -111,7 +111,7 @@ class RewardNet(nn.Module, abc.ABC):
         action: np.ndarray,
         next_state: np.ndarray,
         done: np.ndarray,
-    ) -> np.ndarray:
+    ) -> th.Tensor:
         """Compute th.Tensor rewards for a batch of transitions without gradients.
 
         Preprocesses the inputs, output th.Tensor reward arrays.
@@ -172,7 +172,7 @@ class RewardNet(nn.Module, abc.ABC):
     ) -> np.ndarray:
         """Compute the processed rewards for a batch of transitions without gradients.
 
-        Default to call `predict`. Subclasses can override this to normalize or
+        Defaults to calling `predict`. Subclasses can override this to normalize or
         otherwise modify the rewards in ways that may help RL training or other
         applications of the reward function.
 
@@ -211,11 +211,11 @@ class RewardNet(nn.Module, abc.ABC):
 class RewardNetWrapper(RewardNet):
     """An abstract RewardNet wrapping a base network.
 
-    A concrete implementation of `forward` method is needed.
+    A concrete implementation of the `forward` method is needed.
     Note: by default, `predict`, `predict_th`, `preprocess`, `predict_processed`,
     `device` and all the PyTorch `nn.Module` methods will be inherited from `RewardNet`
     and not passed through to the base network. If any of these methods is overridden
-    in the base `RewardNet`, it will be not inherited from `RewardNetWrapper`.
+    in the base `RewardNet`, this will not affect `RewardNetWrapper`.
     """
 
     def __init__(
@@ -334,10 +334,14 @@ class NormalizedRewardNet(RewardNetWrapper):
             base: a base RewardNet
             normalize_output_layer: The class to use to normalize rewards. This
                 can be any nn.Module that preserves the shape; e.g. `nn.Identity`,
-                `nn.BatchNorm*`, `nn.LayerNorm`, or `networks.RunningNorm`.
+                `nn.LayerNorm`, or `networks.RunningNorm`.
         """
+        # Note(yawen): by default, the reward output is squeezed to produce
+        # tensors with (N,) shape for predict_processed. This works for
+        # `networks.RunningNorm`, but not for `nn.BatchNorm1d` that requires
+        # shape of (N,C).
         super().__init__(base=base)
-        # assuming reward is always a scalar
+        # Assuming reward is scalar, norm layer should be initialized with shape (1,).
         self.normalize_output_layer = normalize_output_layer(1)
 
     def predict_processed(
@@ -346,6 +350,7 @@ class NormalizedRewardNet(RewardNetWrapper):
         action: np.ndarray,
         next_state: np.ndarray,
         done: np.ndarray,
+        update_stats: bool = True,
     ) -> np.ndarray:
         """Compute normalized rewards for a batch of transitions without gradients.
 
@@ -354,31 +359,8 @@ class NormalizedRewardNet(RewardNetWrapper):
             action: Actions of shape `(batch_size,) + action_shape`.
             next_state: Successor states of shape `(batch_size,) + state_shape`.
             done: End-of-episode (terminal state) indicator of shape `(batch_size,)`.
-
-        Returns:
-            Computed normalized rewards of shape `(batch_size,`).
-        """
-        with networks.evaluating(self):
-            # switch to eval mode (affecting normalization, dropout, etc)
-            rew_th = self.base.predict_th(state, action, next_state, done)
-        rew = self.normalize_output_layer(rew_th).detach().cpu().numpy().flatten()
-        assert rew.shape == state.shape[:1]
-        return rew
-
-    def predict_processed_eval(
-        self,
-        state: np.ndarray,
-        action: np.ndarray,
-        next_state: np.ndarray,
-        done: np.ndarray,
-    ) -> np.ndarray:
-        """Compute normalized rewards for a batch of transitions without gradients.
-
-        Args:
-            state: Current states of shape `(batch_size,) + state_shape`.
-            action: Actions of shape `(batch_size,) + action_shape`.
-            next_state: Successor states of shape `(batch_size,) + state_shape`.
-            done: End-of-episode (terminal state) indicator of shape `(batch_size,)`.
+            update_stats: Whether to update the running stats of the normalization
+                layer.
 
         Returns:
             Computed normalized rewards of shape `(batch_size,`).
@@ -387,6 +369,9 @@ class NormalizedRewardNet(RewardNetWrapper):
             # switch to eval mode (affecting normalization, dropout, etc)
             rew_th = self.base.predict_th(state, action, next_state, done)
             rew = self.normalize_output_layer(rew_th).detach().cpu().numpy().flatten()
+        if update_stats:
+            with th.no_grad():
+                self.normalize_output_layer.update_stats(rew_th)
         assert rew.shape == state.shape[:1]
         return rew
 
