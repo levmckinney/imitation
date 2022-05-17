@@ -11,6 +11,7 @@ from stable_baselines3.common import (
     on_policy_algorithm,
     vec_env,
 )
+from copy import deepcopy
 
 from imitation.scripts.common.train import train_ingredient
 
@@ -25,10 +26,11 @@ def config():
     rl_kwargs = dict(
         # For recommended PPO hyperparams in each environment, see:
         # https://github.com/DLR-RM/rl-baselines3-zoo/blob/master/hyperparams/ppo.yml
-        learning_rate=3e-4,
-        batch_size=64,
-        n_epochs=10,
-        ent_coef=0.0,
+        # Default HPs are as follows:
+        # learning_rate=3e-4,
+        # batch_size=64,
+        # n_epochs=10,
+        # ent_coef=0.0,
     )
     locals()  # quieten flake8
 
@@ -38,7 +40,7 @@ def fast():
     batch_size = 2
     # SB3 RL seems to need batch size of 2, otherwise it runs into numeric
     # issues when computing multinomial distribution during predict()
-    rl_kwargs = dict(batch_size=2)
+    # rl_kwargs = dict(batch_size=2)
     locals()  # quieten flake8
 
 
@@ -90,7 +92,9 @@ def make_rl_algo(
         raise TypeError(f"Unsupported RL algorithm '{rl_cls}'")
     rl_algo = rl_cls(
         policy=train["policy_cls"],
-        policy_kwargs=train["policy_kwargs"],
+        # stable_baselines3.common.OffPolicyAlgorithm updated ReadOnlyDict from Sacred config in the following
+        # https://github.com/DLR-RM/stable-baselines3/blob/a6f5049a99a4c21a6f0bcce458ca3306cef310e0/stable_baselines3/common/off_policy_algorithm.py#L142
+        policy_kwargs=deepcopy(train["policy_kwargs"]),
         env=venv,
         seed=_seed,
         **rl_kwargs,
