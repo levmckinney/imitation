@@ -423,6 +423,20 @@ class MCEIRL(base.DemonstrationAlgorithm[types.TransitionsMinimal]):
                 f"Unsupported demonstration type {type(demonstrations)}",
             )
 
+    def get_predicted_r(self):
+        with th.no_grad():
+            obs_mat = self.env.observation_matrix
+            torch_obs_mat = th.as_tensor(
+                obs_mat,
+                dtype=self.reward_net.dtype,
+                device=self.reward_net.device,
+            )
+            return (
+                squeeze_r(self.reward_net(torch_obs_mat, None, None, None))
+                .cpu()
+                .numpy()
+            )
+
     def _train_step(self, obs_mat: th.Tensor):
         self.optimizer.zero_grad()
 

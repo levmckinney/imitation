@@ -1,6 +1,9 @@
 """Example discrete MDPs for use with tabular MCE IRL."""
 
-from typing import Optional
+from __future__ import annotations
+
+from enum import Enum, auto
+from typing import List, Optional, Tuple
 
 import gym
 import numpy as np
@@ -194,6 +197,193 @@ class RandomMDP(TabularModelEnv):
         return self._horizon
 
 
+class Terrain(Enum):
+    """The terrain cell types used in the custom grid world."""
+
+    EMPTY = auto()
+    CLIFF = auto()
+    START = auto()
+    GOAL = auto()
+    WALL = auto()
+
+    @staticmethod
+    def from_description(description: str) -> List[Terrain]:
+        # Remove all whitespace
+        description = "".join(description.split())
+        syms = []
+        for char in description:
+            if char == "#":
+                syms.append(Terrain.WALL)
+            elif char == "C":
+                syms.append(Terrain.CLIFF)
+            elif char == "S":
+                syms.append(Terrain.START)
+            elif char == "G":
+                syms.append(Terrain.GOAL)
+            else:
+                syms.append(Terrain.EMPTY)
+        return syms
+
+
+class CustomGridWorld(TabularModelEnv):
+    """Customizable grid world."""
+
+    # TODO(lev): explain the way the description class works
+
+    def __init__(
+        self,
+        *,
+        description: str,
+        width: int,
+        height: int,
+        horizon: int,
+        use_xy_obs: bool,
+        wind: Tuple[int, int] = (0, 0),
+        fail_p=0,
+        rew_default: int = -1,
+        rew_goal: int = 10,
+        rew_cliff: int = -10,
+    ):
+        """Builds custom gridworld."""
+        super().__init__()
+        assert (
+            width >= 3 and height >= 2
+        ), "degenerate grid world requested; is this a bug?"
+        assert wind in {
+            (0, 0),
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+        }, "More complex wind not supported"
+        self.description = description
+        self.width = width
+        self.height = height
+        n_states = width * height
+        self.terrain = Terrain.from_description(description)
+        self.start_state = self.terrain.index(Terrain.START)
+
+        O_mat = self._observation_matrix = np.zeros(
+            (n_states, 2 if use_xy_obs else n_states),
+            dtype=np.float32,
+        )
+        R_vec = self._reward_matrix = np.zeros((n_states,))
+        T_mat = self._transition_matrix = np.zeros((n_states, 4, n_states))
+        self._horizon = horizon
+        succ_p = 1 - fail_p
+
+        assert (
+            len(self.terrain) == width * height
+        ), f"""description len {len(self.terrain)} does not
+ match dimension {width}*{height} = {width*height}!"""
+        for row in range(height):
+            for col in range(width):
+                state_id = self.xy_to_id(row, col)
+                # start by computing reward
+                if self.terrain[state_id] == Terrain.EMPTY:
+                    r = rew_default  # blank
+                elif self.terrain[state_id] == Terrain.START:
+                    r = rew_default  # start
+                elif self.terrain[state_id] == Terrain.GOAL:
+                    r = rew_goal  # goal
+                elif self.terrain == Terrain.CLIFF:
+                    r = rew_cliff  # cliff
+                elif self.terrain == Terrain.WALL:
+                    r = None
+
+                R_vec[state_id] = r
+
+                # now compute observation
+                if use_xy_obs:
+                    # (x, y) coordinate scaled to (0,1)
+                    O_mat[state_id, :] = [
+                        float(col) / (width - 1),
+                        float(row) / (height - 1),
+                    ]
+                else:
+                    # our observation matrix is just the identity; observation
+                    # is an indicator vector telling us exactly what state
+                    # we're in
+                    O_mat[state_id, state_id] = 1
+
+                # finally, compute transition matrix entries for each of the
+                # four actions
+                for drow in [-1, 1]:
+                    for dcol in [-1, 1]:
+                        action_id = (drow + 1) + (dcol + 1) // 2
+                        target_state = self.xy_to_id(row + drow, col + dcol)
+                        fail_state = self.xy_to_id(
+                            row + drow + wind[0],
+                            col + dcol + wind[1],
+                        )
+                        if (
+                            not self.terrain[target_state] == Terrain.WALL
+                        ):  # If not moving into wall consider wind
+                            T_mat[state_id, action_id, target_state] += succ_p
+                            if not self.terrain[fail_state] == Terrain.WALL:
+                                T_mat[state_id, action_id, fail_state] += fail_p
+                            else:
+                                T_mat[state_id, action_id, state_id] += fail_p
+                        else:  # Walking into a wall is a no-op regardless of wind
+                            T_mat[state_id, action_id, state_id] += 1
+
+    def xy_to_id(self, row, col):
+        """Convert (x,y) state to state ID, after clamp x & y to lie in grid."""
+        row = min(max(row, 0), self.height - 1)
+        col = min(max(col, 0), self.width - 1)
+        state_id = row * self.width + col
+        assert 0 <= state_id < self.n_states
+        return state_id
+
+    @property
+    def observation_matrix(self):
+        return self._observation_matrix
+
+    @property
+    def transition_matrix(self):
+        return self._transition_matrix
+
+    @property
+    def reward_matrix(self):
+        return self._reward_matrix
+
+    @property
+    def horizon(self):
+        return self._horizon
+
+    @property
+    def initial_state_dist(self):
+        # always start in s0
+        rv = np.zeros((self.n_states,))
+        rv[self.start_state] = 1.0
+        return rv
+
+    def __str__(self):
+        return self.description
+
+    def draw_value_vec(self, D, wall_val=float("NaN")) -> None:
+        """Use matplotlib to plot a vector of values for each state.
+
+        The vector could represent things like reward, occupancy measure, etc.
+        Anything within a wall is set to `wall_val`.
+
+        Args:
+            D: the vector to plot.
+            wall_val: value assigned to walls
+        """
+        import matplotlib.pyplot as plt
+
+        for i in range(self.n_states):
+            if self.terrain[i] == Terrain.WALL:
+                D[i] = wall_val
+
+        grid = D.reshape(self.height, self.width)
+
+        plt.imshow(grid)
+        plt.colorbar()
+        plt.gca().grid(False)
+
+
 class CliffWorld(TabularModelEnv):
     """A grid world with a goal next to a cliff the agent may fall into.
 
@@ -330,6 +520,7 @@ class CliffWorld(TabularModelEnv):
 
         grid = D.reshape(self.height, self.width)
         plt.imshow(grid)
+        plt.legend()
         plt.gca().grid(False)
 
 
@@ -367,5 +558,74 @@ gym.register(
         "random_obs": True,
         "obs_dim": 5,
         "generator_seed": 42,
+    },
+)
+
+gym.register(
+    id="imitation/Explore-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+G______
+_______
+####_##
+_______
+S______
+""",
+        "width": 7,
+        "height": 5,
+        "horizon": 10,
+        "use_xy_obs": False,
+        "wind": (0, 0),
+        "fail_p": 0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+gym.register(
+    id="imitation/ExploreCloseGap-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+G______
+_______
+_######
+_______
+S______
+""",
+        "width": 7,
+        "height": 5,
+        "horizon": 11,
+        "use_xy_obs": False,
+        "wind": (0, 0),
+        "fail_p": 0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+gym.register(
+    id="imitation/Explore2Goals-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+G_____G
+_______
+####_##
+_______
+S______
+""",
+        "width": 7,
+        "height": 5,
+        "horizon": 11,
+        "use_xy_obs": False,
+        "wind": (0, 0),
+        "fail_p": 0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
     },
 )
