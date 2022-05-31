@@ -308,24 +308,23 @@ class CustomGridWorld(TabularModelEnv):
 
                 # finally, compute transition matrix entries for each of the
                 # four actions
-                for drow in [-1, 1]:
-                    for dcol in [-1, 1]:
-                        action_id = (drow + 1) + (dcol + 1) // 2
-                        target_state = self.xy_to_id(row + drow, col + dcol)
-                        fail_state = self.xy_to_id(
-                            row + drow + wind[0],
-                            col + dcol + wind[1],
-                        )
-                        if (
-                            not self.terrain[target_state] == Terrain.WALL
-                        ):  # If not moving into wall consider wind
-                            T_mat[state_id, action_id, target_state] += succ_p
-                            if not self.terrain[fail_state] == Terrain.WALL:
-                                T_mat[state_id, action_id, fail_state] += fail_p
-                            else:
-                                T_mat[state_id, action_id, state_id] += fail_p
-                        else:  # Walking into a wall is a no-op regardless of wind
-                            T_mat[state_id, action_id, state_id] += 1
+                for drow, dcol in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                    action_id = (drow + 1) + (dcol + 1) // 2
+                    target_state = self.xy_to_id(row + drow, col + dcol)
+                    fail_state = self.xy_to_id(
+                        row + drow + wind[0],
+                        col + dcol + wind[1],
+                    )
+                    if (
+                        not self.terrain[target_state] == Terrain.WALL
+                    ):  # If not moving into wall consider wind
+                        T_mat[state_id, action_id, target_state] += succ_p
+                        if not self.terrain[fail_state] == Terrain.WALL:
+                            T_mat[state_id, action_id, fail_state] += fail_p
+                        else:
+                            T_mat[state_id, action_id, state_id] += fail_p
+                    else:  # Walking into a wall is a no-op regardless of wind
+                        T_mat[state_id, action_id, state_id] += 1
 
     def xy_to_id(self, row, col):
         """Convert (x,y) state to state ID, after clamp x & y to lie in grid."""
@@ -520,7 +519,7 @@ class CliffWorld(TabularModelEnv):
 
         grid = D.reshape(self.height, self.width)
         plt.imshow(grid)
-        plt.legend()
+        plt.colorbar()
         plt.gca().grid(False)
 
 
@@ -574,7 +573,7 @@ S______
 """,
         "width": 7,
         "height": 5,
-        "horizon": 10,
+        "horizon": 11,
         "use_xy_obs": False,
         "wind": (0, 0),
         "fail_p": 0,
