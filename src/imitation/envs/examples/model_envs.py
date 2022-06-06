@@ -308,8 +308,9 @@ class CustomGridWorld(TabularModelEnv):
 
                 # finally, compute transition matrix entries for each of the
                 # four actions
-                for drow, dcol in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                    action_id = (drow + 1) + (dcol + 1) // 2
+                for action_id, (drow, dcol) in enumerate(
+                    [(1, 0), (-1, 0), (0, 1), (0, -1)],
+                ):
                     target_state = self.xy_to_id(row + drow, col + dcol)
                     fail_state = self.xy_to_id(
                         row + drow + wind[0],
@@ -325,6 +326,10 @@ class CustomGridWorld(TabularModelEnv):
                             T_mat[state_id, action_id, state_id] += fail_p
                     else:  # Walking into a wall is a no-op regardless of wind
                         T_mat[state_id, action_id, state_id] += 1
+                    next_state_p = T_mat[state_id, action_id, :]
+                    assert (
+                        next_state_p.sum() == 1
+                    ), f"next state probabilities {next_state_p} don't sum to one"
 
     def xy_to_id(self, row, col):
         """Convert (x,y) state to state ID, after clamp x & y to lie in grid."""
@@ -372,6 +377,7 @@ class CustomGridWorld(TabularModelEnv):
         """
         import matplotlib.pyplot as plt
 
+        D = np.array(D)
         for i in range(self.n_states):
             if self.terrain[i] == Terrain.WALL:
                 D[i] = wall_val
@@ -573,7 +579,7 @@ S______
 """,
         "width": 7,
         "height": 5,
-        "horizon": 11,
+        "horizon": 15,
         "use_xy_obs": False,
         "wind": (0, 0),
         "fail_p": 0,
@@ -622,6 +628,72 @@ S______
         "horizon": 11,
         "use_xy_obs": False,
         "wind": (0, 0),
+        "fail_p": 0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+gym.register(
+    id="imitation/ExploreBig-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+________________________________________
+_G______________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+##############################_#########
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+S_______________________________________
+""",
+        "width": 40,
+        "height": 15,
+        "horizon": 80,
+        "use_xy_obs": False,
+        "wind": (0, 0),
+        "fail_p": 0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+gym.register(
+    id="imitation/ExploreBigWind-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+________________________________________
+_G______________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+##############################_#########
+________________________________________
+________________________________________
+________________________________________
+________________________________________
+S_______________________________________
+""",
+        "width": 40,
+        "height": 15,
+        "horizon": 150,
+        "use_xy_obs": False,
+        "wind": (-1, 0),
         "fail_p": 0,
         "rew_default": -1,
         "rew_goal": 10,
