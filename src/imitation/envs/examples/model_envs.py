@@ -738,6 +738,41 @@ CCCCCCC###______S______C
     },
 )
 
+
+gym.register(
+    id="imitation/RaceTrackSmallNoCliff-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+CCCCCCCCCCCCCCCCCCCCCCCC
+G______________________C
+G______________________C
+G______________________C
+G______________________C
+G______________________C
+#####__________________C
+#######________________C
+CCCCC###_______________C
+CCCCC###_______________C
+CCCCC###_______________C
+CCCCCC###______________C
+CCCCCC###______________C
+CCCCCC####_____________C
+CCCCCCC###______S______C
+""",
+        "width": 24,
+        "height": 15,
+        "horizon": 200,
+        "use_xy_obs": False,
+        "wind": (-1, 0),
+        "fail_p": 0.0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+
 gym.register(
     id="imitation/RaceTrackSmall-v0",
     entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
