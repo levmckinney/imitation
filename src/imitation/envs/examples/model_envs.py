@@ -351,6 +351,10 @@ class CustomGridWorld(TabularModelEnv):
     def reward_matrix(self):
         return self._reward_matrix
 
+    @reward_matrix.setter
+    def set_reward_matrix(self, reward_matrix: np.ndarray):
+        self.reward_matrix = reward_matrix
+
     @property
     def horizon(self):
         return self._horizon
