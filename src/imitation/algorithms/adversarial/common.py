@@ -378,6 +378,7 @@ class AdversarialTrainer(base.DemonstrationAlgorithm[types.Transitions]):
                 total_timesteps=total_timesteps,
                 reset_num_timesteps=False,
                 callback=self.gen_callback,
+                reward_fn=self.reward_train,
                 **learn_kwargs,
             )
             self._global_step += 1
