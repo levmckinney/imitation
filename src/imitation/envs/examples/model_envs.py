@@ -805,3 +805,55 @@ CCCCCCC###______S______C
         "rew_cliff": -10,
     },
 )
+
+gym.register(
+    id="imitation/RaceTrackTiny-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+CCCCCCCCCCC
+G_________C
+G_________C
+###_______C
+####______C
+####______C
+#####_____C
+#####__S__C
+""",
+        "width": 11,
+        "height": 8,
+        "horizon": 50,
+        "use_xy_obs": False,
+        "wind": (-1, 0),
+        "fail_p": 0.0,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
+
+gym.register(
+    id="imitation/RaceTrackTinyWindy-v0",
+    entry_point="imitation.envs.examples.model_envs:CustomGridWorld",
+    kwargs={
+        "description": """
+CCCCCCCCCCC
+G_________C
+G_________C
+###_______C
+####______C
+####______C
+#####_____C
+#####__S__C
+""",
+        "width": 11,
+        "height": 8,
+        "horizon": 50,
+        "use_xy_obs": False,
+        "wind": (-1, 0),
+        "fail_p": 0.4,
+        "rew_default": -1,
+        "rew_goal": 10,
+        "rew_cliff": -10,
+    },
+)
