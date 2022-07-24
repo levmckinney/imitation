@@ -382,6 +382,7 @@ class AdversarialTrainer(base.DemonstrationAlgorithm[types.Transitions]):
         with self.logger.accumulate_means("gen"):
             self.gen_algo.learn(
                 total_timesteps=total_timesteps,
+                reward_fn=self.reward_train.predict_processed,
                 reset_num_timesteps=False,
                 callback=self.gen_callback,
                 **learn_kwargs,
