@@ -218,6 +218,7 @@ class AgentTrainer(TrajectoryGenerator):
             )
         self.algorithm.learn(
             total_timesteps=steps,
+            rewrad_fn=self.reward_fn,
             reset_num_timesteps=False,
             callback=self.log_callback,
             **kwargs,
