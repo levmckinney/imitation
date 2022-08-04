@@ -29,7 +29,9 @@ TESTS_REQUIRE = (
         "codespell",
         "darglint",
         "filelock",
-        "flake8",
+        # TODO(adam): remove pin once flake8-isort fixed:
+        #  https://github.com/gforcada/flake8-isort/issues/115
+        "flake8~=4.0.1",
         "flake8-blind-except",
         "flake8-builtins",
         "flake8-commas",
@@ -53,17 +55,19 @@ TESTS_REQUIRE = (
     + PYTYPE
 )
 DOCS_REQUIRE = [
-    # TODO(adam): unpin once https://github.com/sphinx-doc/sphinx/issues/10705 fixed
-    "sphinx~=5.0.2",
+    "sphinx~=5.1.1",
     "sphinx-autodoc-typehints",
     "sphinx-rtd-theme",
     "sphinxcontrib-napoleon",
+    "furo",
+    "sphinx-copybutton",
+    "sphinx-github-changelog",
 ]
 
 
 def get_readme() -> str:
     """Retrieve content from README."""
-    with open("README.md", "r") as f:
+    with open("README.md", "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -125,6 +129,7 @@ setup(
             "ipdb",
             "isort~=5.0",
             "codespell",
+            "sphinx-autobuild",
             # for convenience
             *TESTS_REQUIRE,
             *DOCS_REQUIRE,
