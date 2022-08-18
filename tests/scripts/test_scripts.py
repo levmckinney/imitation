@@ -97,6 +97,7 @@ _RL_AGENT_LOADING_CONFIGS = {
 
 PREFERENCE_COMPARISON_CONFIGS = [
     {},
+    {"num_agents": 3},
     {
         "trajectory_path": CARTPOLE_TEST_ROLLOUT_PATH,
     },
@@ -141,6 +142,15 @@ def test_train_preference_comparisons_main(tmpdir, config):
     )
     assert run.status == "COMPLETED"
     assert isinstance(run.result, dict)
+
+
+def test_train_preference_comparison_zero_agents_raises_value_error(tmpdir):
+    config_updates = dict(common=dict(log_root=tmpdir), num_agents=0)
+    with pytest.raises(ValueError, match="num_agents must be at least 1!"):
+        train_preference_comparisons.train_preference_comparisons_ex.run(
+            named_configs=["cartpole"] + ALGO_FAST_CONFIGS["preference_comparison"],
+            config_updates=config_updates,
+        )
 
 
 @pytest.mark.parametrize(
