@@ -274,6 +274,7 @@ class AgentTrainer(TrajectoryGenerator):
                 deterministic_policy=False,
             )
             additional_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
+            self.all_trajectories._trajectories.extend(additional_trajs)
             agent_trajs = list(agent_trajs) + list(additional_trajs)
 
         agent_trajs = _get_trajectories(agent_trajs, agent_steps)
@@ -294,6 +295,7 @@ class AgentTrainer(TrajectoryGenerator):
                 deterministic_policy=False,
             )
             exploration_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
+            self.all_trajectories._trajectories.extend(exploration_trajs)
             exploration_trajs = _get_trajectories(exploration_trajs, exploration_steps)
         # We call _get_trajectories separately on agent_trajs and exploration_trajs
         # and then just concatenate. This could mean we return slightly too many
