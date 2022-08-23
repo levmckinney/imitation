@@ -110,7 +110,7 @@ class TrajectoryDataset(TrajectoryGenerator):
             custom_logger: Where to log to; if None (default), creates a new logger.
         """
         super().__init__(custom_logger=custom_logger)
-        self._trajectories = trajectories
+        self._trajectories = list(trajectories)
         self.rng = random.Random(seed)
 
     def sample(self, steps: int) -> Sequence[TrajectoryWithRew]:
@@ -122,6 +122,7 @@ class TrajectoryDataset(TrajectoryGenerator):
 
 class AgentTrainer(TrajectoryGenerator):
     """Wrapper for training an SB3 algorithm on an arbitrary reward function."""
+    all_trajectories: TrajectoryDataset
 
     def __init__(
         self,
@@ -200,6 +201,8 @@ class AgentTrainer(TrajectoryGenerator):
             switch_prob=switch_prob,
             seed=seed,
         )
+        self.all_trajectories = TrajectoryDataset()
+        self._agent_trajs = []
 
     def train(self, steps: int, **kwargs) -> None:
         """Train the agent using the reward function specified during instantiation.
@@ -226,6 +229,8 @@ class AgentTrainer(TrajectoryGenerator):
                 callback=self.log_callback,
                 **kwargs,
             )
+        self._agent_trajs = self.buffering_wrapper.pop_finished_trajectories()
+        self.all_trajectories._trajectories.extend(self._agent_trajs)
 
     def sample(self, steps: int) -> Sequence[types.TrajectoryWithRew]:
         agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
