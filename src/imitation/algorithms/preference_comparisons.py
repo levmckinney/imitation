@@ -201,7 +201,7 @@ class AgentTrainer(TrajectoryGenerator):
             switch_prob=switch_prob,
             seed=seed,
         )
-        self.all_trajectories = TrajectoryDataset()
+        self.all_trajectories = TrajectoryDataset([])
         self._agent_trajs = []
 
     def train(self, steps: int, **kwargs) -> None:
