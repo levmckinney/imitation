@@ -229,18 +229,17 @@ class AgentTrainer(TrajectoryGenerator):
                 callback=self.log_callback,
                 **kwargs,
             )
-        self._agent_trajs = self.buffering_wrapper.pop_finished_trajectories()
+        self._agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
         self.all_trajectories._trajectories.extend(self._agent_trajs)
 
     def sample(self, steps: int) -> Sequence[types.TrajectoryWithRew]:
-        agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
         # We typically have more trajectories than are needed.
         # In that case, we use the final trajectories because
         # they are the ones with the most relevant version of
         # the agent.
         # The easiest way to do this will be to first invert the
         # list and then later just take the first trajectories:
-        agent_trajs = agent_trajs[::-1]
+        agent_trajs = self._agent_trajs[::-1]
         avail_steps = sum(len(traj) for traj in agent_trajs)
 
         exploration_steps = int(self.exploration_frac * steps)
