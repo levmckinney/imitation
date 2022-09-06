@@ -2,6 +2,7 @@
 
 import re
 from typing import Sequence
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -56,6 +57,17 @@ def agent(venv):
 @pytest.fixture
 def random_fragmenter():
     return preference_comparisons.RandomFragmenter(seed=0, warning_threshold=0)
+
+
+@pytest.fixture
+def trajectory_with_reward() -> TrajectoryWithRew:
+    return TrajectoryWithRew(
+        obs=np.zeros((33, 10), dtype=float),
+        acts=np.zeros(32, dtype=int),
+        infos=None,
+        terminal=False,
+        rews=np.zeros(32, dtype=float),
+    )
 
 
 @pytest.fixture
@@ -172,6 +184,50 @@ def test_transitions_left_in_buffer(agent_trainer):
         ),
     ):
         agent_trainer.train(steps=1)
+
+
+def test_mixture_of_trajectory_generators_train_and_sample(trajectory_with_reward):
+    gen_1 = mock.Mock(spec=preference_comparisons.TrajectoryGenerator)
+    gen_2 = mock.Mock(spec=preference_comparisons.TrajectoryGenerator)
+    gen_1.sample.return_value = 6 * [trajectory_with_reward]
+    gen_2.sample.return_value = 6 * [trajectory_with_reward]
+    mixture = preference_comparisons.MixtureOfTrajectoryGenerators(
+        members=(gen_1, gen_2),
+        share_training_steps=False,
+    )
+    training_steps = 11
+    num_generators = 2
+    kwargs = dict(foo=4)
+    mixture.train(steps=training_steps, **kwargs)
+    # When share training steps is off we expect each
+    # generator to train for the full 10 step
+    assert gen_1.train.called_once_with(steps=training_steps, **kwargs)
+    assert gen_2.train.called_once_with(steps=training_steps, **kwargs)
+    # When `share_training_step`s is enabled we expect the training steps to be split
+    # close to equally amongst the generators
+    mixture.share_training_steps = True
+    mixture.train(training_steps)
+    assert (
+        gen_1.train.call_args.args[0] + gen_2.train.call_args.args[0] == training_steps
+    )
+    assert gen_1.train.call_args.args[0] >= training_steps // num_generators
+    assert gen_2.train.call_args.args[0] >= training_steps // num_generators
+    num_samples = 11
+    # Similarly, we expect the samples to always be split evenly amongst the
+    # generators.
+    mixture.sample(training_steps)
+    assert (
+        gen_1.sample.call_args.args[0] + gen_2.sample.call_args.args[0] == num_samples
+    )
+    assert gen_1.sample.call_args.args[0] >= num_samples // num_generators
+    assert gen_2.sample.call_args.args[0] >= num_samples // num_generators
+
+
+def test_mixture_of_trajectory_generators_raises_value_error_when_members_is_empty():
+    with pytest.raises(ValueError):
+        preference_comparisons.MixtureOfTrajectoryGenerators(
+            members=[],
+        )
 
 
 @pytest.mark.parametrize(

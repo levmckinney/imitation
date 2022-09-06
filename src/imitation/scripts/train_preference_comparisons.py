@@ -69,6 +69,7 @@ def train_preference_comparisons(
     trajectory_generator_kwargs: Mapping[str, Any],
     save_preferences: bool,
     agent_path: Optional[str],
+    num_agents: int,
     preference_model_kwargs: Mapping[str, Any],
     reward_trainer_kwargs: Mapping[str, Any],
     gatherer_cls: Type[preference_comparisons.PreferenceGatherer],
@@ -80,6 +81,7 @@ def train_preference_comparisons(
     allow_variable_horizon: bool,
     checkpoint_interval: int,
     query_schedule: Union[str, type_aliases.Schedule],
+    share_training_steps_among_agents: bool,
 ) -> Mapping[str, Any]:
     """Train a reward model using preference comparisons.
 
@@ -113,6 +115,7 @@ def train_preference_comparisons(
         save_preferences: if True, store the final dataset of preferences to disk.
         agent_path: if given, initialize the agent using this stored policy
             rather than randomly.
+        num_agents: number of agents to train the reward model against.
         preference_model_kwargs: passed to PreferenceModel
         reward_trainer_kwargs: passed to BasicRewardTrainer or EnsembleRewardTrainer
         gatherer_cls: type of PreferenceGatherer to use (defaults to SyntheticGatherer)
@@ -140,6 +143,9 @@ def train_preference_comparisons(
             be allocated to each iteration. "hyperbolic" and "inverse_quadratic"
             apportion fewer queries to later iterations when the policy is assumed
             to be better and more stable.
+        share_training_steps_among_agents: If True (default), when training with
+            num_agents > 1 training steps are split equally among the agents. If
+            False, all agents train for the full number of steps.
 
     Returns:
         Rollout statistics from trained policy.
@@ -155,31 +161,55 @@ def train_preference_comparisons(
             reward_net.predict_processed,
             update_stats=False,
         )
-        if agent_path is None:
-            agent = rl_common.make_rl_algo(venv, relabel_reward_fn=relabel_reward_fn)
-        else:
-            agent = rl_common.load_rl_algo_from_path(
-                agent_path=agent_path,
-                venv=venv,
-                relabel_reward_fn=relabel_reward_fn,
-            )
 
-        if trajectory_path is None:
-            # Setting the logger here is not necessary (PreferenceComparisons takes care
-            # of it automatically) but it avoids creating unnecessary loggers.
-            trajectory_generator = preference_comparisons.AgentTrainer(
+        if num_agents < 1 or not isinstance(num_agents, int):
+            raise ValueError("num_agents must be a positive integer!")
+
+        def make_agent_trainer(seed: Optional[int] = None):
+            if agent_path is None:
+                agent = rl_common.make_rl_algo(
+                    venv,
+                    relabel_reward_fn=relabel_reward_fn,
+                )
+            else:
+                agent = rl_common.load_rl_algo_from_path(
+                    agent_path=agent_path,
+                    venv=venv,
+                    relabel_reward_fn=relabel_reward_fn,
+                )
+
+            # Setting the logger here is not really necessary (PreferenceComparisons
+            # takes care of that automatically) but it avoids creating unnecessary
+            # loggers
+            return preference_comparisons.AgentTrainer(
                 algorithm=agent,
                 reward_fn=reward_net,
                 venv=venv,
                 exploration_frac=exploration_frac,
-                seed=_seed,
+                seed=_seed if seed is None else seed,
                 custom_logger=custom_logger,
                 **trajectory_generator_kwargs,
             )
+
+        if trajectory_path is None and num_agents == 1:
+            single_agent = True
+            trajectory_generator = make_agent_trainer()
             # Stable Baselines will automatically occupy GPU 0 if it is available.
             # Let's use the same device as the SB3 agent for the reward model.
             reward_net = reward_net.to(trajectory_generator.algorithm.device)
+        elif trajectory_path is None and num_agents > 1:
+            single_agent = False
+            members = [make_agent_trainer(_seed + i) for i in range(num_agents)]
+            trajectory_generator = preference_comparisons.MixtureOfTrajectoryGenerators(
+                members=members,
+                custom_logger=custom_logger,
+                share_training_steps=share_training_steps_among_agents,
+            )
+            # Again using the same device as the SB3 agent
+            reward_net = reward_net.to(members[0].algorithm.device)
         else:
+            single_agent = False
+
             if exploration_frac > 0:
                 raise ValueError(
                     "exploration_frac can't be set when a trajectory dataset is used",
@@ -251,7 +281,7 @@ def train_preference_comparisons(
                         "checkpoints",
                         f"{iteration_num:04d}",
                     ),
-                    allow_save_policy=bool(trajectory_path is None),
+                    allow_save_policy=single_agent,
                 )
 
         results = main_trainer.train(
@@ -261,9 +291,9 @@ def train_preference_comparisons(
         )
 
         # Storing and evaluating policy only useful if we generated trajectory data
-        if bool(trajectory_path is None):
+        if trajectory_path is None and single_agent:
             results = dict(results)
-            results["rollout"] = train.eval_policy(agent, venv)
+            results["rollout"] = train.eval_policy(trajectory_generator.algorithm, venv)
 
     if save_preferences:
         main_trainer.dataset.save(os.path.join(log_dir, "preferences.pkl"))
@@ -273,7 +303,7 @@ def train_preference_comparisons(
         save_checkpoint(
             trainer=main_trainer,
             save_path=os.path.join(log_dir, "checkpoints", "final"),
-            allow_save_policy=bool(trajectory_path is None),
+            allow_save_policy=single_agent,
         )
 
     return results

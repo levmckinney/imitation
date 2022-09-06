@@ -3,6 +3,8 @@
 Trains a reward model and optionally a policy based on preferences
 between trajectory fragments.
 """
+from __future__ import generators
+
 import abc
 import math
 import pickle
@@ -210,19 +212,20 @@ class AgentTrainer(TrajectoryGenerator):
             RuntimeError: Transitions left in `self.buffering_wrapper`; call
                 `self.sample` first to clear them.
         """
-        n_transitions = self.buffering_wrapper.n_transitions
-        if n_transitions:
-            raise RuntimeError(
-                f"There are {n_transitions} transitions left in the buffer. "
-                "Call AgentTrainer.sample() first to clear them.",
+        with self.logger.accumulate_means("agent"):
+            n_transitions = self.buffering_wrapper.n_transitions
+            if n_transitions:
+                raise RuntimeError(
+                    f"There are {n_transitions} transitions left in the buffer. "
+                    "Call AgentTrainer.sample() first to clear them.",
+                )
+            self.algorithm.learn(
+                total_timesteps=steps,
+                reward_fn=self.reward_fn,
+                reset_num_timesteps=False,
+                callback=self.log_callback,
+                **kwargs,
             )
-        self.algorithm.learn(
-            total_timesteps=steps,
-            reward_fn=self.reward_fn,
-            reset_num_timesteps=False,
-            callback=self.log_callback,
-            **kwargs,
-        )
 
     def sample(self, steps: int) -> Sequence[types.TrajectoryWithRew]:
         agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
@@ -298,6 +301,99 @@ class AgentTrainer(TrajectoryGenerator):
     def logger(self, value: imit_logger.HierarchicalLogger):
         self._logger = value
         self.algorithm.set_logger(self.logger)
+
+
+class MixtureOfTrajectoryGenerators(TrajectoryGenerator):
+    """A collection of trajectory generators merged together."""
+
+    members: Sequence[TrajectoryGenerator]
+
+    def __init__(
+        self,
+        members: Sequence[TrajectoryGenerator],
+        custom_logger: Optional[imit_logger.HierarchicalLogger] = None,
+        share_training_steps: bool = True,
+    ):
+        """Create a mixture of trajectory generators.
+
+        Args:
+            members: Individual trajectory generators that will make up the ensemble.
+            custom_logger: Custom logger passed to super class.
+            share_training_steps: If True, training steps are split equally among the
+                trajectory generators. If False, all each trajectory generator train
+                for the full number of steps. Defaults to True.
+
+        Raises:
+            ValueError: if members is empty.
+        """
+        if len(members) < 2:
+            raise ValueError(
+                "MixtureOfTrajectoryGenerators requires at least two member!",
+            )
+        self.members = tuple(members)
+        super().__init__(custom_logger=custom_logger)
+        self.share_training_steps = share_training_steps
+
+    def _partition(self, steps: int) -> Sequence[int]:
+        """Partition steps into len(self.members) close to equal parts."""
+        n = len(self.members)
+        # Approximately evenly partition work.
+        d = steps // n
+        if d == 0:
+            raise ValueError(
+                f"Cannot partition only {steps} steps among {n} members!",
+            )
+        r = steps % n
+        partition = [d] * n
+        for i in range(r):
+            partition[i] += 1
+        return partition
+
+    def sample(self, steps: int) -> Sequence[TrajectoryWithRew]:
+        """Sample a batch of trajectories splitting evenly amongst the mixture members.
+
+        Args:
+            steps: All trajectories taken together should
+                have at least this many steps.
+
+        Returns:
+            A list of sampled trajectories with rewards (which should
+            be the environment rewards, not ones from a reward model).
+        """
+        trajectories = []
+        for s, generator in zip(self._partition(steps), self.members):
+            trajectories.extend(generator.sample(s))
+        return trajectories
+
+    def train(self, steps: int, **kwargs):
+        """Train each trajectory generator.
+
+        If self.share_training_steps is set to true, training steps are split equally
+        among the trajectory generators. Otherwise, all each trajectory generator trains
+        for the full number of steps.
+
+        Args:
+            steps: number of environment steps to train for.
+            **kwargs: additional keyword arguments to passed along to members.
+        """
+        if self.share_training_steps:
+            steps_to_train = self._partition(steps)
+        else:
+            steps_to_train = [steps]
+
+        for i, (generator, s) in enumerate(zip(self.members, steps_to_train)):
+            with self.logger.add_prefix(f"gen_{i}"):
+                generator.train(s, **kwargs)
+
+    @property
+    def logger(self) -> imit_logger.HierarchicalLogger:
+        return self._logger
+
+    @logger.setter
+    def logger(self, value: imit_logger.HierarchicalLogger):
+        self._logger = value
+        for generator in self.members:
+            generator.logger = value
 
 
 def _get_trajectories(
@@ -1524,9 +1620,8 @@ class PreferenceComparisons(base.BaseImitationAlgorithm):
             # at the end of training (where the reward model is presumably best)
             if i == self.num_iterations - 1:
                 num_steps += extra_timesteps
-            with self.logger.accumulate_means("agent"):
-                self.logger.log(f"Training agent for {num_steps} timesteps")
-                self.trajectory_generator.train(steps=num_steps)
+            self.logger.log(f"Training agent for {num_steps} timesteps")
+            self.trajectory_generator.train(steps=num_steps)
 
             self.logger.dump(self._iteration)
 
