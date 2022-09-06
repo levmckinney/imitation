@@ -13,6 +13,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     List,
     Mapping,
     NamedTuple,
@@ -110,7 +111,7 @@ class TrajectoryDataset(TrajectoryGenerator):
             custom_logger: Where to log to; if None (default), creates a new logger.
         """
         super().__init__(custom_logger=custom_logger)
-        self._trajectories = trajectories
+        self._trajectories = list(trajectories)
         self.rng = random.Random(seed)
 
     def sample(self, steps: int) -> Sequence[TrajectoryWithRew]:
@@ -122,6 +123,7 @@ class TrajectoryDataset(TrajectoryGenerator):
 
 class AgentTrainer(TrajectoryGenerator):
     """Wrapper for training an SB3 algorithm on an arbitrary reward function."""
+    all_trajectories: TrajectoryDataset
 
     def __init__(
         self,
@@ -131,6 +133,7 @@ class AgentTrainer(TrajectoryGenerator):
         exploration_frac: float = 0.0,
         switch_prob: float = 0.5,
         random_prob: float = 0.5,
+        save_all_trajectories: bool = False,
         seed: Optional[int] = None,
         custom_logger: Optional[imit_logger.HierarchicalLogger] = None,
     ):
@@ -163,6 +166,7 @@ class AgentTrainer(TrajectoryGenerator):
             reward_fn = reward_fn.predict_processed
         self.reward_fn = reward_fn
         self.exploration_frac = exploration_frac
+        self.save_all_trajectories = save_all_trajectories
 
         # The BufferingWrapper records all trajectories, so we can return
         # them after training. This should come first (before the wrapper that
@@ -200,6 +204,7 @@ class AgentTrainer(TrajectoryGenerator):
             switch_prob=switch_prob,
             seed=seed,
         )
+        self.all_trajectories = TrajectoryDataset([])
 
     def train(self, steps: int, **kwargs) -> None:
         """Train the agent using the reward function specified during instantiation.
@@ -227,8 +232,14 @@ class AgentTrainer(TrajectoryGenerator):
                 **kwargs,
             )
 
+    def _add_to_all_trajectories(self, trajectories: Iterable[TrajectoryWithRew]):
+        if self.save_all_trajectories:
+            self.all_trajectories._trajectories.extend(trajectories)
+
     def sample(self, steps: int) -> Sequence[types.TrajectoryWithRew]:
         agent_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
+        self._add_to_all_trajectories(agent_trajs)
+
         # We typically have more trajectories than are needed.
         # In that case, we use the final trajectories because
         # they are the ones with the most relevant version of
@@ -270,6 +281,7 @@ class AgentTrainer(TrajectoryGenerator):
                 deterministic_policy=False,
             )
             additional_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
+            self._add_to_all_trajectories(additional_trajs)
             agent_trajs = list(agent_trajs) + list(additional_trajs)
 
         agent_trajs = _get_trajectories(agent_trajs, agent_steps)
@@ -290,6 +302,7 @@ class AgentTrainer(TrajectoryGenerator):
                 deterministic_policy=False,
             )
             exploration_trajs, _ = self.buffering_wrapper.pop_finished_trajectories()
+            self._add_to_all_trajectories(exploration_trajs)
             exploration_trajs = _get_trajectories(exploration_trajs, exploration_steps)
         # We call _get_trajectories separately on agent_trajs and exploration_trajs
         # and then just concatenate. This could mean we return slightly too many
